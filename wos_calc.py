@@ -5,11 +5,11 @@ import matplotlib.pyplot as plt
 
 # Define tier data
 tiers = [
-    {"cost": 20, "rfc_probs": {1: 0.65, 2: 0.25, 3: 0.10}, "refinements": 20, "max_rfc": 3},  # Tier 1
-    {"cost": 50, "rfc_probs": {2: 0.85, 3: 0.15}, "refinements": 20, "max_rfc": 3},       # Tier 2
-    {"cost": 100, "rfc_probs": {3: 0.85, 4: 0.125, 5: 0.02, 6: 0.005}, "refinements": 20, "max_rfc": 6},  # Tier 3
-    {"cost": 130, "rfc_probs": {3: 0.75, 4: 0.15, 5: 0.05, 6: 0.03, 7: 0.01, 8: 0.005, 9: 0.005}, "refinements": 20, "max_rfc": 9},  # Tier 4
-    {"cost": 160, "rfc_probs": {3: 0.7, 4: 0.12, 5: 0.09, 6: 0.04, 7: 0.015, 8: 0.01, 9: 0.01, 10: 0.005, 11: 0.005, 12: 0.005}, "refinements": 20, "max_rfc": 12},  # Tier 5
+    {"cost": 20, "rfc_probs": {1: 0.65, 2: 0.25, 3: 0.10}, "refinements": 20, "min_rfc": 1, "max_rfc": 3},  # Tier 1
+    {"cost": 50, "rfc_probs": {2: 0.85, 3: 0.15}, "refinements": 20, "min_rfc": 2, "max_rfc": 3},       # Tier 2
+    {"cost": 100, "rfc_probs": {3: 0.85, 4: 0.125, 5: 0.02, 6: 0.005}, "refinements": 20, "min_rfc": 3, "max_rfc": 6},  # Tier 3
+    {"cost": 130, "rfc_probs": {3: 0.75, 4: 0.15, 5: 0.05, 6: 0.03, 7: 0.01, 8: 0.005, 9: 0.005}, "refinements": 20, "min_rfc": 3, "max_rfc": 9},  # Tier 4
+    {"cost": 160, "rfc_probs": {3: 0.7, 4: 0.12, 5: 0.09, 6: 0.04, 7: 0.015, 8: 0.01, 9: 0.01, 10: 0.005, 11: 0.005, 12: 0.005}, "refinements": 20, "min_rfc": 3, "max_rfc": 12},  # Tier 5
 ]
 
 # Function to calculate maximum possible rFC for given refinements
@@ -31,48 +31,38 @@ def simulate_refinement(tier):
     probabilities = list(tier["rfc_probs"].values())
     return np.random.choice(rfc_values, p=probabilities)
 
-# Function to run one simulation
+# Function to run one simulation for refinement simulator
 def run_simulation(weeks, day1_refinements, days2_7_refinements):
     total_fc = 0
     total_rfc = 0
     for _ in range(weeks):
         current_tier = 0
         refinements_in_tier = 0
-        # Simulate each day of the week
         for day in range(7):
-            if day == 0:
-                refinements_today = day1_refinements
-            else:
-                refinements_today = days2_7_refinements
+            refinements_today = day1_refinements if day == 0 else days2_7_refinements
             for refinement in range(refinements_today):
-                # Apply daily discount to first refinement
-                if refinement == 0:
-                    cost = tiers[current_tier]["cost"] / 2
-                else:
-                    cost = tiers[current_tier]["cost"]
+                cost = tiers[current_tier]["cost"] / 2 if refinement == 0 else tiers[current_tier]["cost"]
                 total_fc += cost
                 total_rfc += simulate_refinement(tiers[current_tier])
                 refinements_in_tier += 1
-                # Tier progression
                 if refinements_in_tier >= tiers[current_tier]["refinements"]:
                     current_tier += 1
                     refinements_in_tier = 0
                     if current_tier >= len(tiers):
-                        current_tier = len(tiers) - 1  # Cap at highest tier
+                        current_tier = len(tiers) - 1
     return total_fc, total_rfc
 
-# Function to run simulation for luck assessment
+# Function to run one simulation for luck assessment
 def run_luck_simulation(refinements):
     total_fc = 0
     total_rfc = 0
     current_tier = 0
     refinements_in_tier = 0
-    # Distribute refinements across days to maximize discounts
     remaining = refinements
     for day in range(7):
         if remaining == 0:
             break
-        # First refinement gets discount
+        # First refinement with discount
         if refinements_in_tier >= tiers[current_tier]["refinements"]:
             current_tier += 1
             refinements_in_tier = 0
@@ -83,7 +73,7 @@ def run_luck_simulation(refinements):
         total_rfc += simulate_refinement(tiers[current_tier])
         refinements_in_tier += 1
         remaining -= 1
-        # Remaining refinements without discount
+        # Additional refinements without discount
         for _ in range(min(remaining, 100)):
             if refinements_in_tier >= tiers[current_tier]["refinements"]:
                 current_tier += 1
@@ -99,13 +89,36 @@ def run_luck_simulation(refinements):
                 break
     return total_fc, total_rfc
 
+# Function to calculate strategy metrics for summary table
+def calculate_strategy_metrics(day1_refinements, days2_7_refinements):
+    total_fc = 0
+    total_min_rfc = 0
+    total_expected_rfc = 0
+    current_tier = 0
+    refinements_in_tier = 0
+    for day in range(7):
+        refinements_today = day1_refinements if day == 0 else days2_7_refinements
+        for refinement in range(refinements_today):
+            cost = tiers[current_tier]["cost"] / 2 if refinement == 0 else tiers[current_tier]["cost"]
+            total_fc += cost
+            total_min_rfc += tiers[current_tier]["min_rfc"]
+            expected_rfc = sum(k * v for k, v in tiers[current_tier]["rfc_probs"].items())
+            total_expected_rfc += expected_rfc
+            refinements_in_tier += 1
+            if refinements_in_tier >= tiers[current_tier]["refinements"]:
+                current_tier += 1
+                refinements_in_tier = 0
+                if current_tier >= len(tiers):
+                    current_tier = len(tiers) - 1
+    return total_fc, total_min_rfc, total_expected_rfc
+
 # Streamlit app
 # Sidebar menu for calculator selection
 calculator = st.sidebar.selectbox("WOS Calculators", ["Refinement Simulator"])
 
 if calculator == "Refinement Simulator":
-    # Horizontal tabs
-    tab1, tab2 = st.tabs(["Refinement Simulator", "Was I Lucky?"])
+    # Horizontal tabs with flipped order for 2nd and 3rd tabs
+    tab1, tab2, tab3 = st.tabs(["Refinement Simulator", "Summary of Strategies", "Was I Lucky?"])
     
     with tab1:
         st.subheader("Refinement Simulator")
@@ -142,19 +155,20 @@ if calculator == "Refinement Simulator":
             # Build quantile table
             quantile_data = {
                 "Quantile": ["1%", "5%", "10%", "25%", "50%", "75%", "90%", "95%", "99%"],
-                "FC Spent": [int(total_fc)] * 9,  # Rounded to integer
-                "rFC Generated": [int(q) for q in quantiles],  # Rounded to integer
-                "FC/rFC Ratio": [round(total_fc / q, 2) if q > 0 else float('inf') for q in quantiles]  # Rounded to 2 decimal places
+                "FC Spent": [int(total_fc)] * 9,
+                "rFC Generated": [int(q) for q in quantiles],
+                "FC/rFC Ratio": [round(total_fc / q, 2) if q > 0 else float('inf') for q in quantiles]
             }
             quantile_df = pd.DataFrame(quantile_data)
             
-            # Style DataFrame for centered columns
+            # Style DataFrame with centered columns and 2 decimal places for ratio
             styled_df = quantile_df.style.set_properties(**{
-                'text-align': 'center',
-                'subset': ['FC Spent', 'rFC Generated', 'FC/rFC Ratio']
+                'text-align': 'center'
             }).set_table_styles([
                 {'selector': 'th', 'props': [('text-align', 'center')]}
-            ])
+            ]).format({
+                'FC/rFC Ratio': '{:.2f}'  # Ensure 2 decimal places
+            })
             
             # Display results
             st.subheader(f"After {simulations} simulations..")
@@ -178,6 +192,50 @@ if calculator == "Refinement Simulator":
             st.pyplot(fig)
     
     with tab2:
+        st.subheader("Summary of Strategies")
+        
+        # Define strategies
+        strategies = [
+            {"description": "Slowest (f2p)", "day1_refinements": 1, "days2_7_refinements": 1},
+            {"description": "Low spender or f2p", "day1_refinements": 20, "days2_7_refinements": 1},
+            {"description": "Mid spender", "day1_refinements": 40, "days2_7_refinements": 1},
+            {"description": "Mid-high spender", "day1_refinements": 60, "days2_7_refinements": 1},
+            {"description": "Whale fast", "day1_refinements": 80, "days2_7_refinements": 1},
+            {"description": "Max speed", "day1_refinements": 94, "days2_7_refinements": 1}
+        ]
+        
+        # Calculate metrics for each strategy
+        strategy_data = []
+        for strategy in strategies:
+            day1_refinements = strategy["day1_refinements"]
+            days2_7_refinements = strategy["days2_7_refinements"]
+            total_fc, min_rfc, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+            avg_fc_per_rfc = total_fc / expected_rfc if expected_rfc > 0 else float('inf')
+            refinements_str = f"{day1_refinements}/" + "/".join([str(days2_7_refinements)] * 6)
+            strategy_data.append({
+                "Description": strategy["description"],
+                "Refinements each of 7 days": refinements_str,
+                "FC consumed/week": int(total_fc),
+                "Min rFC/week": int(min_rfc),
+                "Average rFC/week": round(expected_rfc, 2),
+                "Average FC/rFC": round(avg_fc_per_rfc, 2)
+            })
+        
+        # Create and style DataFrame
+        strategy_df = pd.DataFrame(strategy_data)
+        styled_strategy_df = strategy_df.style.set_properties(**{
+            'text-align': 'center'
+        }).set_table_styles([
+            {'selector': 'th', 'props': [('text-align', 'center')]}
+        ]).format({
+            'Average rFC/week': '{:.2f}',
+            'Average FC/rFC': '{:.2f}'
+        })
+        
+        # Display the table
+        st.dataframe(styled_strategy_df, use_container_width=True)
+    
+    with tab3:
         st.subheader("Was I Lucky?")
         
         # Input UI elements
