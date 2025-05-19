@@ -118,7 +118,7 @@ calculator = st.sidebar.selectbox("WOS Calculators", ["Refinement Simulator"])
 
 if calculator == "Refinement Simulator":
     # Horizontal tabs with flipped order for 2nd and 3rd tabs
-    tab1, tab2, tab3 = st.tabs(["Refinement Simulator", "Summary of Strategies", "Was I Lucky?"])
+    tab1, tab2, tab3 = st.tabs(["Refinement Simulator", "Strategies", "Was I Lucky?"])
     
     with tab1:
         st.subheader("Refinement Simulator")
@@ -133,7 +133,7 @@ if calculator == "Refinement Simulator":
             max_value=max_days2_7,
             value=0
         )
-        simulations = st.number_input("Number of Monte Carlo Simulations", min_value=1, max_value=100000, value=1000)
+        simulations = st.number_input("Number of Monte Carlo Simulations", min_value=1, max_value=100000, value=4000)
         
         # Run simulations button
         if st.button("Run Simulations"):
@@ -194,12 +194,12 @@ if calculator == "Refinement Simulator":
     with tab2:
         st.subheader("Summary of Strategies")
         
-        # Define strategies
+        # Define list of common strategies
         strategies = [
             {"description": "Slowest (f2p)", "day1_refinements": 1, "days2_7_refinements": 1},
             {"description": "Low spender or f2p", "day1_refinements": 20, "days2_7_refinements": 1},
             {"description": "Mid spender", "day1_refinements": 40, "days2_7_refinements": 1},
-            {"description": "Mid-high spender", "day1_refinements": 60, "days2_7_refinements": 1},
+            {"description": "High spender", "day1_refinements": 60, "days2_7_refinements": 1},
             {"description": "Whale fast", "day1_refinements": 80, "days2_7_refinements": 1},
             {"description": "Max speed", "day1_refinements": 94, "days2_7_refinements": 1}
         ]
@@ -214,11 +214,11 @@ if calculator == "Refinement Simulator":
             refinements_str = f"{day1_refinements}/" + "/".join([str(days2_7_refinements)] * 6)
             strategy_data.append({
                 "Description": strategy["description"],
-                "Refinements each of 7 days": refinements_str,
-                "FC consumed/week": int(total_fc),
+                "Refine day 1-7": refinements_str,
+                "FC used/week": int(total_fc),
                 "Min rFC/week": int(min_rfc),
-                "Average rFC/week": round(expected_rfc, 2),
-                "Average FC/rFC": round(avg_fc_per_rfc, 2)
+                "Ave rFC/week": round(expected_rfc, 2),
+                "Ave FC/rFC": round(avg_fc_per_rfc, 2)
             })
         
         # Create and style DataFrame
