@@ -89,7 +89,7 @@ def run_luck_simulation(refinements):
                 break
     return total_fc, total_rfc
 
-# Function to calculate strategy metrics for summary table
+# Function to calculate strategy metrics for summary table and plan tab
 def calculate_strategy_metrics(day1_refinements, days2_7_refinements):
     total_fc = 0
     total_min_rfc = 0
@@ -114,11 +114,11 @@ def calculate_strategy_metrics(day1_refinements, days2_7_refinements):
 
 # Streamlit app
 # Sidebar menu for calculator selection
-calculator = st.sidebar.selectbox("WOS Calculators", ["Refinement Simulator"])
+calculator = st.sidebar.selectbox("WOS Calculators", ["FC Refinement"])
 
-if calculator == "Refinement Simulator":
-    # Horizontal tabs with flipped order for 2nd and 3rd tabs
-    tab1, tab2, tab3 = st.tabs(["Refinement Simulator", "Strategies", "Was I Lucky?"])
+if calculator == "FC Refinement":
+    # Horizontal tabs with reordered tabs
+    tab1, tab2, tab3, tab4 = st.tabs(["rFC Simulator", "Was I Lucky?", "Plan", "Strategies"])
     
     with tab1:
         st.subheader("Refinement Simulator")
@@ -133,7 +133,7 @@ if calculator == "Refinement Simulator":
             max_value=max_days2_7,
             value=0
         )
-        simulations = st.number_input("Number of Monte Carlo Simulations", min_value=1, max_value=100000, value=4000)
+        simulations = st.number_input("Number of Monte Carlo Simulations (1,000=fast; 4,000=balanced; 100,000=precise)", min_value=1, max_value=100000, value=4000)
         
         # Run simulations button
         if st.button("Run Simulations"):
@@ -192,51 +192,6 @@ if calculator == "Refinement Simulator":
             st.pyplot(fig)
     
     with tab2:
-        st.subheader("Summary of Strategies")
-        
-        # Define list of common strategies
-        strategies = [
-            {"description": "f2p/low spender", "day1_refinements": 1, "days2_7_refinements": 1},
-            {"description": "f2p/low spender", "day1_refinements": 14, "days2_7_refinements": 1},
-            {"description": "Low spender", "day1_refinements": 20, "days2_7_refinements": 1},
-            {"description": "Mid spender", "day1_refinements": 40, "days2_7_refinements": 1},
-            {"description": "Whale", "day1_refinements": 60, "days2_7_refinements": 1},
-            {"description": "Whale", "day1_refinements": 80, "days2_7_refinements": 1},
-            {"description": "Nobody", "day1_refinements": 94, "days2_7_refinements": 1}
-        ]
-        
-        # Calculate metrics for each strategy
-        strategy_data = []
-        for strategy in strategies:
-            day1_refinements = strategy["day1_refinements"]
-            days2_7_refinements = strategy["days2_7_refinements"]
-            total_fc, min_rfc, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
-            avg_fc_per_rfc = total_fc / expected_rfc if expected_rfc > 0 else float('inf')
-            refinements_str = f"{day1_refinements}/" + "/".join([str(days2_7_refinements)] * 6)
-            strategy_data.append({
-                "Recommended for": strategy["description"],
-                "Refine day 1-7": refinements_str,
-                "FC used/week": int(total_fc),
-                "Min rFC/week": int(min_rfc),
-                "Ave rFC/week": round(expected_rfc, 2),
-                "Ave FC/rFC": round(avg_fc_per_rfc, 2)
-            })
-        
-        # Create and style DataFrame
-        strategy_df = pd.DataFrame(strategy_data)
-        styled_strategy_df = strategy_df.style.set_properties(**{
-            'text-align': 'center'
-        }).set_table_styles([
-            {'selector': 'th', 'props': [('text-align', 'center')]}
-        ]).format({
-            'Average rFC/week': '{:.2f}',
-            'Average FC/rFC': '{:.2f}'
-        })
-        
-        # Display the table
-        st.dataframe(styled_strategy_df, use_container_width=True)
-    
-    with tab3:
         st.subheader("Was I Lucky?")
         
         # Input UI elements
@@ -290,3 +245,256 @@ if calculator == "Refinement Simulator":
                 st.write(f"**{luck_message}**")
                 st.write(comparison)
                 st.write(f"Your FC cost was {fc_per_rfc:.2f} FC spent per 1 rFC refined.")
+    
+    with tab3:
+        st.subheader("Plan")
+        st.write("Determine weekly refinements needed to reach a specified rFC target in a given period of time.")
+        
+        # Input UI elements
+        rfc_needed = st.number_input("Number of rFC needed", min_value=1, max_value=1000, value=1, format="%d")
+        current_rfc = st.number_input("Current number of rFC you have", min_value=0, max_value=1000, value=0, format="%d")
+        weeks = st.number_input("Number of weeks to reach target rFC", min_value=1, max_value=104, value=1, format="%d")
+        luck_option = st.selectbox("Accounting for luck, how sure do you want to be to reach target on schedule?", 
+                                  ["Assume average luck", "Plan for bad luck", "I'm feeling lucky!", "Custom"])
+        
+        # Set percentile based on luck option
+        if luck_option == "Assume average luck":
+            percentile = 50.0
+            editable = False
+        elif luck_option == "Plan for bad luck":
+            percentile = 10.0
+            editable = False
+        elif luck_option == "I'm feeling lucky!":
+            percentile = 90.0
+            editable = False
+        else:  # custom
+            percentile = 50.0
+            editable = True
+        
+        # Percentile input, editable only for custom
+        percentile_factor = st.number_input("Luck percentile", min_value=0.0, max_value=100.0, value=percentile, 
+                                           step=0.1, disabled=not editable, format="%.1f")
+        
+        # Create plan button
+        if st.button("Create plan"):
+            # Calculate rFC needed to gain
+            rfc_to_gain = rfc_needed - current_rfc
+            if rfc_to_gain <= 0:
+                st.error("You already have enough rFC to meet your target!")
+            else:
+                # Initialize variables
+                optimal_x = None
+                target_percentile_rfc = None
+                total_fc_used = None
+                
+                if luck_option == "Assume average luck":
+                    # Step 1: Use theoretical expected rFC for 50th percentile
+                    low, high = 1, 94  # Max 94 to allow 1 per day for days 2-7 (94 + 6 = 100)
+                    while low <= high:
+                        mid = (low + high) // 2
+                        day1_refinements = mid
+                        days2_7_refinements = 1
+                        total_fc, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+                        total_expected_rfc = expected_rfc * weeks
+                        
+                        if total_expected_rfc >= rfc_to_gain:
+                            optimal_x = mid
+                            target_percentile_rfc = total_expected_rfc
+                            total_fc_used = total_fc * weeks
+                            high = mid - 1  # Try for a lower X
+                        else:
+                            low = mid + 1  # Need a higher X
+                else:
+                    # Step 1: Set bounds using theoretical min_rfc and max_rfc
+                    target_rfc_per_week = rfc_to_gain / weeks
+                    low, high = 1, 94
+                    min_x, max_x = None, None
+                    
+                    # Find minimum X where min_rfc * weeks >= rfc_to_gain
+                    l, h = 1, 94
+                    while l <= h:
+                        mid = (l + h) // 2
+                        day1_refinements = mid
+                        days2_7_refinements = 1
+                        _, min_rfc, _ = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+                        total_min_rfc = min_rfc * weeks
+                        
+                        if total_min_rfc >= rfc_to_gain:
+                            min_x = mid
+                            h = mid - 1
+                        else:
+                            l = mid + 1
+                    
+                    # Find minimum X where max_rfc * weeks >= rfc_to_gain
+                    l, h = 1, 94
+                    while l <= h:
+                        mid = (l + h) // 2
+                        day1_refinements = mid
+                        days2_7_refinements = 1
+                        _, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+                        total_max_rfc = calculate_max_rfc(day1_refinements + 6) * weeks
+                        
+                        if total_max_rfc >= rfc_to_gain:
+                            max_x = mid
+                            h = mid - 1
+                        else:
+                            l = mid + 1
+                    
+                    # Set bounds for binary search
+                    high = min_x if min_x is not None else 94
+                    low = max_x if max_x is not None else 1
+                    
+                    # st.write(f"low={low}") # for debugging
+                    # st.write(f"high={high}")
+
+                    # Step 2: Approximate using theoretical expected rFC within bounds
+                    initial_x = None
+                    while low <= high:
+                        mid = (low + high) // 2
+                        day1_refinements = mid
+                        days2_7_refinements = 1
+                        _, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+                        total_expected_rfc = expected_rfc * weeks
+                        
+                        if total_expected_rfc >= rfc_to_gain:
+                            initial_x = mid
+                            high = mid - 1  # Try for a lower X
+                        else:
+                            low = mid + 1  # Need a higher X
+                    
+                    # Step 3: Refine with Monte Carlo simulations
+                    simulations = 1000
+                    
+                    if initial_x is not None:
+                        # Test a range around initial_x
+                        for x in range(max(1, initial_x - 10), min(95, initial_x + 11)):
+                            day1_refinements = x
+                            days2_7_refinements = 1
+                            rfc_results = []
+                            for _ in range(simulations):
+                                fc, rfc = run_simulation(weeks, day1_refinements, days2_7_refinements)
+                                rfc_results.append(rfc)
+                            percentile_rfc = np.percentile(rfc_results, percentile_factor)
+                            
+                            if percentile_rfc >= rfc_to_gain and (optimal_x is None or x < optimal_x):
+                                optimal_x = x
+                                target_percentile_rfc = percentile_rfc
+                                total_fc_used = fc
+                    
+                    # Step 4: Fallback to binary search within bounds if no solution found
+                    if optimal_x is None:
+                        low = min_x if min_x is not None else 1
+                        high = max_x if max_x is not None else 94
+                        while low <= high:
+                            mid = (low + high) // 2
+                            day1_refinements = mid
+                            days2_7_refinements = 1
+                            rfc_results = []
+                            for _ in range(simulations):
+                                fc, rfc = run_simulation(weeks, day1_refinements, days2_7_refinements)
+                                rfc_results.append(rfc)
+                            percentile_rfc = np.percentile(rfc_results, percentile_factor)
+                            
+                            if percentile_rfc >= rfc_to_gain:
+                                optimal_x = mid
+                                target_percentile_rfc = percentile_rfc
+                                total_fc_used = fc
+                                high = mid - 1  # Try for a lower X
+                            else:
+                                low = mid + 1  # Need a higher X
+                
+                if optimal_x is None:
+                    st.error("No strategy can achieve the target rFC within the given time and luck constraints :(")
+                else:
+                    # Output formatted result
+                    total_rfc = current_rfc + target_percentile_rfc
+                    probability = percentile_factor
+                    st.write(f"Using the weekly refinement strategy {optimal_x}/1/1/1/1/1/1, you have a {probability:.1f}% chance of obtaining {target_percentile_rfc:.0f} rFC in {weeks} weeks. Combined with your existing amount, you should end up with {total_rfc:.0f} rFC at a cost of {total_fc_used:.0f} FC expended in refinement.")
+    
+    with tab4:
+        st.subheader("Summary of Strategies")
+        st.write("In most situations, it's recommended to select a number of refinements the first day of the week and then refine 1x over the remaining 6 days. The following table summarizes a few reasonable strategies in order of increasing speed, but decreasing efficiency.")
+        
+        # Define list of common strategies
+        strategies = [
+            {"description": "f2p/low spender", "day1_refinements": 1, "days2_7_refinements": 1},
+            {"description": "f2p/low spender", "day1_refinements": 14, "days2_7_refinements": 1},
+            {"description": "Low/mid spender", "day1_refinements": 20, "days2_7_refinements": 1},
+            {"description": "Mid/high spender", "day1_refinements": 40, "days2_7_refinements": 1},
+            {"description": "Whale", "day1_refinements": 60, "days2_7_refinements": 1},
+            {"description": "Whale", "day1_refinements": 80, "days2_7_refinements": 1},
+            {"description": "Nobody", "day1_refinements": 94, "days2_7_refinements": 1}
+        ]
+        
+        # Calculate metrics for each strategy
+        strategy_data = []
+        for strategy in strategies:
+            day1_refinements = strategy["day1_refinements"]
+            days2_7_refinements = strategy["days2_7_refinements"]
+            total_fc, min_rfc, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+            avg_fc_per_rfc = total_fc / expected_rfc if expected_rfc > 0 else float('inf')
+            refinements_str = f"{day1_refinements}/" + "/".join([str(days2_7_refinements)] * 6)
+            strategy_data.append({
+                "Recommended for": strategy["description"],
+                "Refine day 1-7": refinements_str,
+                "FC used/week": int(total_fc),
+                "Min rFC/week": int(min_rfc),
+                "Ave rFC/week": round(expected_rfc, 2),
+                "Ave FC/rFC": round(avg_fc_per_rfc, 2)
+            })
+        
+        # Create and style DataFrame
+        strategy_df = pd.DataFrame(strategy_data)
+        styled_strategy_df = strategy_df.style.set_properties(**{
+            'text-align': 'center'
+        }).set_table_styles([
+            {'selector': 'th', 'props': [('text-align', 'center')]}
+        ]).format({
+            'Ave rFC/week': '{:.2f}',
+            'Ave FC/rFC': '{:.2f}'
+        })
+        
+        # Display the table
+        st.dataframe(styled_strategy_df, use_container_width=True)
+        
+        # Plot FC/rFC ratio and average rFC as a function of weekly refinements
+        st.write("Plot showing how the FC/rFC cost and expected rFC output vary with number of weekly refinements, assuming (total refinements - 6) are done on day one and one refinement each on the remaining six days. Lower FC/rFC ratios indicate better efficiency, while higher rFC values represent faster progress.")
+        
+        max_refinements = st.slider("Adjust upper plot limit", min_value=10, max_value=100, value=100, step=1)
+
+        weekly_refinements = np.arange(7, max_refinements + 1, 1)
+        fc_rfc_ratios = []
+        avg_rfcs = []
+        
+        for total_refinements in weekly_refinements:
+            day1_refinements = total_refinements - 6
+            days2_7_refinements = 1
+            total_fc, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+            fc_rfc_ratio = total_fc / expected_rfc if expected_rfc > 0 else float('inf')
+            fc_rfc_ratios.append(fc_rfc_ratio)
+            avg_rfcs.append(expected_rfc)
+        
+        fig, ax1 = plt.subplots()
+        
+        # Plot FC/rFC ratio on left y-axis
+        ax1.plot(weekly_refinements, fc_rfc_ratios, 'b-', label='FC/rFC Cost Ratio')
+        ax1.set_xlabel('Refinements per Week')
+        ax1.set_ylabel('FC/rFC Cost Ratio', color='b')
+        ax1.tick_params(axis='y', labelcolor='b')
+        
+        # Add major and minor gridlines
+        ax1.grid(True, which='major', linestyle='-', linewidth=0.8)
+        ax1.minorticks_on()
+        ax1.grid(True, which='minor', linestyle='--', linewidth=0.4)
+        
+        # Create right y-axis for average rFC
+        ax2 = ax1.twinx()
+        ax2.plot(weekly_refinements, avg_rfcs, 'r-', label='Typical rFC/week')
+        ax2.set_ylabel('Typical rFC made per week', color='r')
+        ax2.tick_params(axis='y', labelcolor='r')
+        
+        plt.title('Refinement Speed-Cost Comparison')
+        fig.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=2)
+        
+        # Display plot
+        st.pyplot(fig)
