@@ -196,12 +196,13 @@ if calculator == "Refinement Simulator":
         
         # Define list of common strategies
         strategies = [
-            {"description": "Slowest (f2p)", "day1_refinements": 1, "days2_7_refinements": 1},
-            {"description": "Low spender or f2p", "day1_refinements": 20, "days2_7_refinements": 1},
+            {"description": "f2p/low spender", "day1_refinements": 1, "days2_7_refinements": 1},
+            {"description": "f2p/low spender", "day1_refinements": 14, "days2_7_refinements": 1},
+            {"description": "Low spender", "day1_refinements": 20, "days2_7_refinements": 1},
             {"description": "Mid spender", "day1_refinements": 40, "days2_7_refinements": 1},
-            {"description": "High spender", "day1_refinements": 60, "days2_7_refinements": 1},
-            {"description": "Whale fast", "day1_refinements": 80, "days2_7_refinements": 1},
-            {"description": "Max speed", "day1_refinements": 94, "days2_7_refinements": 1}
+            {"description": "Whale", "day1_refinements": 60, "days2_7_refinements": 1},
+            {"description": "Whale", "day1_refinements": 80, "days2_7_refinements": 1},
+            {"description": "Nobody", "day1_refinements": 94, "days2_7_refinements": 1}
         ]
         
         # Calculate metrics for each strategy
@@ -213,7 +214,7 @@ if calculator == "Refinement Simulator":
             avg_fc_per_rfc = total_fc / expected_rfc if expected_rfc > 0 else float('inf')
             refinements_str = f"{day1_refinements}/" + "/".join([str(days2_7_refinements)] * 6)
             strategy_data.append({
-                "Description": strategy["description"],
+                "Recommended for": strategy["description"],
                 "Refine day 1-7": refinements_str,
                 "FC used/week": int(total_fc),
                 "Min rFC/week": int(min_rfc),
