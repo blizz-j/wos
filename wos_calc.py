@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import json
 
 # Define tier data
 tiers = [
@@ -112,7 +113,7 @@ def calculate_strategy_metrics(day1_refinements, days2_7_refinements):
                     current_tier = len(tiers) - 1
     return total_fc, total_min_rfc, total_expected_rfc
 
-# Streamlit app
+# ********** Streamlit app UI **********
 # Sidebar menu for calculator selection
 calculator = st.sidebar.selectbox("WOS Calculators", ["FC Refinement"])
 
@@ -120,7 +121,7 @@ if calculator == "FC Refinement":
     # Horizontal tabs with reordered tabs
     tab1, tab2, tab3, tab4 = st.tabs(["rFC Simulator", "Was I Lucky?", "Plan", "Strategies"])
     
-    with tab1:
+    with tab1: # Run simulations tab
         st.subheader("Refinement Simulator")
         
         # Input UI elements
@@ -191,7 +192,7 @@ if calculator == "FC Refinement":
             ax.set_ylabel("Frequency")
             st.pyplot(fig)
     
-    with tab2:
+    with tab2: # Was I Lcuky? tab
         st.subheader("Was I Lucky?")
         
         # Input UI elements
@@ -246,14 +247,110 @@ if calculator == "FC Refinement":
                 st.write(comparison)
                 st.write(f"Your FC cost was {fc_per_rfc:.2f} FC spent per 1 rFC refined.")
     
-    with tab3:
+    with tab3: # Plan Tab
         st.subheader("Plan")
         st.write("Determine weekly refinements needed to reach a specified rFC target in a given period of time.")
+        if not 'rfc_needed' in st.session_state:
+            st.session_state.rfc_needed = 0
         
         # Input UI elements
-        rfc_needed = st.number_input("Number of rFC needed", min_value=1, max_value=1000, value=1, format="%d")
-        current_rfc = st.number_input("Current number of rFC you have", min_value=0, max_value=1000, value=0, format="%d")
-        weeks = st.number_input("Number of weeks to reach target rFC", min_value=1, max_value=104, value=1, format="%d")
+        opt1 = "Choose buildings"
+        opt2 = "Enter rFC goal"
+        plan_input_method = st.segmented_control("rFC Target specification method",[opt1, opt2],
+                                                 selection_mode="single",label_visibility="hidden",default=opt1)
+        if plan_input_method == opt1:
+            # Load the JSON file
+            with open("building_costs.json", "r") as f:
+                data = json.load(f)
+
+            # List of levels and buildings for easy reference
+            LEVELS = ["FC6", "FC7", "FC8", "FC9", "FC10"]
+            BUILDINGS = list(data["buildings"].keys())
+            SHORT_NAMES = {
+                "Furnace": "Furn.",
+                "Embassy": "Emb.",
+                "Infirmary": "Infirm.",
+                "Command Center": "C.C.",
+                "Infantry Camp": "C-I",
+                "Marksman Camp": "C-M",
+                "Lancer Camp": "C-L",
+                "War Academy": "W.A."
+            }
+            # Initialize session state for selected levels and buildings
+            if "selected_levels" not in st.session_state:
+                st.session_state.selected_levels = []
+            if "selected_buildings" not in st.session_state:
+                st.session_state.selected_buildings = []
+
+            # Pills widget for level selection (FC6 to FC10)
+            #st.markdown("**Select building upgrades to determine rFC target**")
+            selected_levels = st.pills(
+                "Building Level(s) (multiselect)",
+                options=LEVELS,
+                selection_mode="multi",
+                key="level_pills"
+            )
+
+            # Update session state with selected levels
+            st.session_state.selected_levels = selected_levels if selected_levels else []
+
+            # For each selected level, display a row of pills for buildings
+            if st.session_state.selected_levels:
+                for level in st.session_state.selected_levels:
+                    # Create a list of building labels with shortened names prefixed by level
+                    building_labels = [f"{level.lower()}: {SHORT_NAMES[building]}" for building in BUILDINGS]
+                    building_options = list(zip(building_labels, [(level, building) for building in BUILDINGS]))
+                    
+                    # Pills widget for buildings with multi-selection
+                    selected_building_labels = st.pills(
+                        f"Buildings for {level}",
+                        options=[label for label, _ in building_options],
+                        selection_mode="multi",
+                        key=f"buildings_pills_{level}",
+                        label_visibility="hidden"
+                    )
+                    
+                    # Update selected buildings for this level
+                    # First, remove any previous selections for this level
+                    st.session_state.selected_buildings = [
+                        (sel_level, sel_building) for sel_level, sel_building in st.session_state.selected_buildings
+                        if sel_level != level
+                    ]
+                    # Add the new selections for this level
+                    if selected_building_labels:
+                        new_selections = [
+                            opt[1] for opt in building_options if opt[0] in selected_building_labels
+                        ]
+                        st.session_state.selected_buildings.extend(new_selections)
+
+            # Filter selected buildings to only include those from currently selected levels
+            st.session_state.selected_buildings = [
+                (level, building) for level, building in st.session_state.selected_buildings
+                if level in st.session_state.selected_levels
+            ]
+
+            # Display the currently selected buildings
+            if st.session_state.selected_buildings:
+                st.write("Upgrade goal:", ", ".join(
+                    f"{level.lower()}: {building}" for level, building in st.session_state.selected_buildings
+                ))
+
+            total_fc = 0
+            total_rfc = 0
+
+            if st.session_state.selected_buildings:
+                for level, building in st.session_state.selected_buildings:
+                    total = data["buildings"][building][level]["total"]
+                    total_fc += total["FC"] # Accumulate totals
+                    total_rfc += total["rFC"] # Accumulate totals
+                st.session_state.rfc_needed = total_rfc
+                st.write(f"To upgrade selected buildings, you need {total_rfc} rFC and {total_fc} FC")
+
+        elif plan_input_method == opt2:
+            st.session_state.rfc_needed = st.number_input("Enter number of rFC you need", min_value=1, max_value=1000, value=1, format="%d")
+
+        current_rfc = st.number_input("Enter number of rFC you already have", min_value=0, max_value=1000, value=0, format="%d")
+        weeks = st.number_input(f"Enter weeks you want to reach rFC target", min_value=1, max_value=104, value=1, format="%d")
         luck_option = st.selectbox("Accounting for luck, how sure do you want to be to reach target on schedule?", 
                                   ["Assume average luck", "Plan for bad luck", "I'm feeling lucky!", "Custom"])
         
@@ -277,139 +374,197 @@ if calculator == "FC Refinement":
         
         # Create plan button
         if st.button("Create plan"):
-            # Calculate rFC needed to gain
-            rfc_to_gain = rfc_needed - current_rfc
-            if rfc_to_gain <= 0:
-                st.error("You already have enough rFC to meet your target!")
+            if st.session_state.rfc_needed == 0:
+                st.warning("Select buildings or number of rFC you need first!")
             else:
-                # Initialize variables
-                optimal_x = None
-                target_percentile_rfc = None
-                total_fc_used = None
-                
-                if luck_option == "Assume average luck":
-                    # Step 1: Use theoretical expected rFC for 50th percentile
-                    low, high = 1, 94  # Max 94 to allow 1 per day for days 2-7 (94 + 6 = 100)
-                    while low <= high:
-                        mid = (low + high) // 2
-                        day1_refinements = mid
-                        days2_7_refinements = 1
-                        total_fc, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
-                        total_expected_rfc = expected_rfc * weeks
-                        
-                        if total_expected_rfc >= rfc_to_gain:
-                            optimal_x = mid
-                            target_percentile_rfc = total_expected_rfc
-                            total_fc_used = total_fc * weeks
-                            high = mid - 1  # Try for a lower X
-                        else:
-                            low = mid + 1  # Need a higher X
+                # Calculate rFC needed to gain
+                rfc_to_gain = st.session_state.rfc_needed - current_rfc
+                if rfc_to_gain <= 0:
+                    st.error("You already have enough rFC to meet your target!")
                 else:
-                    # Step 1: Set bounds using theoretical min_rfc and max_rfc
-                    target_rfc_per_week = rfc_to_gain / weeks
-                    low, high = 1, 94
-                    min_x, max_x = None, None
+                    # Initialize variables
+                    optimal_x = None
+                    target_percentile_rfc = None
+                    total_fc_used = None
                     
-                    # Find minimum X where min_rfc * weeks >= rfc_to_gain
-                    l, h = 1, 94
-                    while l <= h:
-                        mid = (l + h) // 2
-                        day1_refinements = mid
-                        days2_7_refinements = 1
-                        _, min_rfc, _ = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
-                        total_min_rfc = min_rfc * weeks
-                        
-                        if total_min_rfc >= rfc_to_gain:
-                            min_x = mid
-                            h = mid - 1
-                        else:
-                            l = mid + 1
-                    
-                    # Find minimum X where max_rfc * weeks >= rfc_to_gain
-                    l, h = 1, 94
-                    while l <= h:
-                        mid = (l + h) // 2
-                        day1_refinements = mid
-                        days2_7_refinements = 1
-                        _, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
-                        total_max_rfc = calculate_max_rfc(day1_refinements + 6) * weeks
-                        
-                        if total_max_rfc >= rfc_to_gain:
-                            max_x = mid
-                            h = mid - 1
-                        else:
-                            l = mid + 1
-                    
-                    # Set bounds for binary search
-                    high = min_x if min_x is not None else 94
-                    low = max_x if max_x is not None else 1
-                    
-                    # st.write(f"low={low}") # for debugging
-                    # st.write(f"high={high}")
-
-                    # Step 2: Approximate using theoretical expected rFC within bounds
-                    initial_x = None
-                    while low <= high:
-                        mid = (low + high) // 2
-                        day1_refinements = mid
-                        days2_7_refinements = 1
-                        _, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
-                        total_expected_rfc = expected_rfc * weeks
-                        
-                        if total_expected_rfc >= rfc_to_gain:
-                            initial_x = mid
-                            high = mid - 1  # Try for a lower X
-                        else:
-                            low = mid + 1  # Need a higher X
-                    
-                    # Step 3: Refine with Monte Carlo simulations
-                    simulations = 1000
-                    
-                    if initial_x is not None:
-                        # Test a range around initial_x
-                        for x in range(max(1, initial_x - 10), min(95, initial_x + 11)):
-                            day1_refinements = x
-                            days2_7_refinements = 1
-                            rfc_results = []
-                            for _ in range(simulations):
-                                fc, rfc = run_simulation(weeks, day1_refinements, days2_7_refinements)
-                                rfc_results.append(rfc)
-                            percentile_rfc = np.percentile(rfc_results, percentile_factor)
-                            
-                            if percentile_rfc >= rfc_to_gain and (optimal_x is None or x < optimal_x):
-                                optimal_x = x
-                                target_percentile_rfc = percentile_rfc
-                                total_fc_used = fc
-                    
-                    # Step 4: Fallback to binary search within bounds if no solution found
-                    if optimal_x is None:
-                        low = min_x if min_x is not None else 1
-                        high = max_x if max_x is not None else 94
+                    if luck_option == "Assume average luck":
+                        # Step 1: Use theoretical expected rFC for 50th percentile
+                        low, high = 1, 94  # Max 94 to allow 1 per day for days 2-7 (94 + 6 = 100)
                         while low <= high:
                             mid = (low + high) // 2
                             day1_refinements = mid
                             days2_7_refinements = 1
-                            rfc_results = []
-                            for _ in range(simulations):
-                                fc, rfc = run_simulation(weeks, day1_refinements, days2_7_refinements)
-                                rfc_results.append(rfc)
-                            percentile_rfc = np.percentile(rfc_results, percentile_factor)
+                            total_fc, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+                            total_expected_rfc = expected_rfc * weeks
                             
-                            if percentile_rfc >= rfc_to_gain:
+                            if total_expected_rfc >= rfc_to_gain:
                                 optimal_x = mid
-                                target_percentile_rfc = percentile_rfc
-                                total_fc_used = fc
+                                target_percentile_rfc = total_expected_rfc
+                                total_fc_used = total_fc * weeks
                                 high = mid - 1  # Try for a lower X
                             else:
                                 low = mid + 1  # Need a higher X
-                
-                if optimal_x is None:
-                    st.error("No strategy can achieve the target rFC within the given time and luck constraints :(")
-                else:
-                    # Output formatted result
-                    total_rfc = current_rfc + target_percentile_rfc
-                    probability = percentile_factor
-                    st.write(f"Using the weekly refinement strategy {optimal_x}/1/1/1/1/1/1, you have a {probability:.1f}% chance of obtaining {target_percentile_rfc:.0f} rFC in {weeks} weeks. Combined with your existing amount, you should end up with {total_rfc:.0f} rFC at a cost of {total_fc_used:.0f} FC expended in refinement.")
+                    else:
+                        # Step 1: Set bounds using theoretical min_rfc and max_rfc
+                        target_rfc_per_week = rfc_to_gain / weeks
+                        low, high = 1, 94
+                        min_x, max_x = None, None
+                        
+                        # Find minimum X where min_rfc * weeks >= rfc_to_gain
+                        l, h = 1, 94
+                        while l <= h:
+                            mid = (l + h) // 2
+                            day1_refinements = mid
+                            days2_7_refinements = 1
+                            _, min_rfc, _ = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+                            total_min_rfc = min_rfc * weeks
+                            
+                            if total_min_rfc >= rfc_to_gain:
+                                min_x = mid
+                                h = mid - 1
+                            else:
+                                l = mid + 1
+                        
+                        # Find minimum X where max_rfc * weeks >= rfc_to_gain
+                        l, h = 1, 94
+                        while l <= h:
+                            mid = (l + h) // 2
+                            day1_refinements = mid
+                            days2_7_refinements = 1
+                            _, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+                            total_max_rfc = calculate_max_rfc(day1_refinements + 6) * weeks
+                            
+                            if total_max_rfc >= rfc_to_gain:
+                                max_x = mid
+                                h = mid - 1
+                            else:
+                                l = mid + 1
+                        
+                        # Set bounds for binary search
+                        high = min_x if min_x is not None else 94
+                        low = max_x if max_x is not None else 1
+                        
+                        # st.write(f"low={low}") # for debugging
+                        # st.write(f"high={high}")
+
+                        # Step 2: Approximate using theoretical expected rFC within bounds
+                        initial_x = None
+                        while low <= high:
+                            mid = (low + high) // 2
+                            day1_refinements = mid
+                            days2_7_refinements = 1
+                            _, _, expected_rfc = calculate_strategy_metrics(day1_refinements, days2_7_refinements)
+                            total_expected_rfc = expected_rfc * weeks
+                            
+                            if total_expected_rfc >= rfc_to_gain:
+                                initial_x = mid
+                                high = mid - 1  # Try for a lower X
+                            else:
+                                low = mid + 1  # Need a higher X
+                        
+                        # Step 3: Refine with Monte Carlo simulations
+                        simulations = 1000
+                        
+                        if initial_x is not None:
+                            # Test a range around initial_x
+                            for x in range(max(1, initial_x - 10), min(95, initial_x + 11)):
+                                day1_refinements = x
+                                days2_7_refinements = 1
+                                rfc_results = []
+                                for _ in range(simulations):
+                                    fc, rfc = run_simulation(weeks, day1_refinements, days2_7_refinements)
+                                    rfc_results.append(rfc)
+                                percentile_rfc = np.percentile(rfc_results, percentile_factor)
+                                
+                                if percentile_rfc >= rfc_to_gain and (optimal_x is None or x < optimal_x):
+                                    optimal_x = x
+                                    target_percentile_rfc = percentile_rfc
+                                    total_fc_used = fc
+                        
+                        # Step 4: Fallback to binary search within bounds if no solution found
+                        if optimal_x is None:
+                            low = min_x if min_x is not None else 1
+                            high = max_x if max_x is not None else 94
+                            while low <= high:
+                                mid = (low + high) // 2
+                                day1_refinements = mid
+                                days2_7_refinements = 1
+                                rfc_results = []
+                                for _ in range(simulations):
+                                    fc, rfc = run_simulation(weeks, day1_refinements, days2_7_refinements)
+                                    rfc_results.append(rfc)
+                                percentile_rfc = np.percentile(rfc_results, percentile_factor)
+                                
+                                if percentile_rfc >= rfc_to_gain:
+                                    optimal_x = mid
+                                    target_percentile_rfc = percentile_rfc
+                                    total_fc_used = fc
+                                    high = mid - 1  # Try for a lower X
+                                else:
+                                    low = mid + 1  # Need a higher X
+                    
+                    if optimal_x is None:
+                        st.error("No strategy can achieve the target rFC within the given time and luck constraints :(")
+                    else:
+                        # Output formatted result
+                        total_rfc = current_rfc + target_percentile_rfc
+                        probability = percentile_factor
+                        st.write(f"Using the weekly refinement strategy {optimal_x}/1/1/1/1/1/1, you have a {probability:.1f}% chance of obtaining {target_percentile_rfc:.0f} rFC in {weeks} weeks. Combined with your existing amount, you should end up with {total_rfc:.0f} rFC at a cost of {total_fc_used:.0f} FC expended in refinement.")
+                        if plan_input_method == opt1:
+                            st.write(f"In addition, you will need {total_fc} fc more for the selected building upgrades.")
+                            
+                            # Display the per-tier cost of each selected building in tables
+                            st.divider()
+                            st.write("#### Building Details")
+                            if st.session_state.selected_buildings:
+                                fc_data = []
+                                rfc_data = []
+                                for level, building in st.session_state.selected_buildings:
+                                    stages = data["buildings"][building][level]["stages"]
+                                    total = data["buildings"][building][level]["total"]
+                                    
+                                    # FC row
+                                    fc_row = {
+                                        "Level": level,
+                                        "Building": building,
+                                        "Total FC": total["FC"],
+                                        "Stage1": stages[0]["FC"],
+                                        "Stage2": stages[1]["FC"],
+                                        "Stage3": stages[2]["FC"],
+                                        "Stage4": stages[3]["FC"],
+                                        "Stage5": stages[4]["FC"]
+                                    }
+                                    fc_data.append(fc_row)
+                                    
+                                    # rFC row
+                                    rfc_row = {
+                                        "Level": level,
+                                        "Building": building,
+                                        "Total rFC": total["rFC"],
+                                        "Stage1": stages[0]["rFC"],
+                                        "Stage2": stages[1]["rFC"],
+                                        "Stage3": stages[2]["rFC"],
+                                        "Stage4": stages[3]["rFC"],
+                                        "Stage5": stages[4]["rFC"]
+                                    }
+                                    rfc_data.append(rfc_row)
+                                
+                                # Display FC table
+                                st.divider()
+                                st.markdown("**FC Cost Breakdown**")
+                                st.dataframe(
+                                    pd.DataFrame(fc_data),
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+                                
+                                # Display rFC table
+                                st.markdown("**rFC Cost Breakdown**")
+                                st.dataframe(
+                                    pd.DataFrame(rfc_data),
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
     
     with tab4:
         st.subheader("Summary of Strategies")
