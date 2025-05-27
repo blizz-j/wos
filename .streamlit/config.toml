@@ -1,7 +1,6 @@
 [theme]
-base = "system" 
-primaryColor = "#007FFF"
-font = "sans serif"
+base = "dark" 
+primaryColor = "#1197C1"
 
 [server]
 enableCORS = false
