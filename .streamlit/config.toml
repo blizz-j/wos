@@ -1,4 +1,5 @@
 [theme]
+base = "system" 
 primaryColor = "#007FFF"
 font = "sans serif"
 
