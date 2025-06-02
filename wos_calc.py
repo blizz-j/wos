@@ -344,6 +344,7 @@ if calculator == "FC Refinement":
                     total_fc += total["FC"] # Accumulate totals
                     total_rfc += total["rFC"] # Accumulate totals
                 st.session_state.rfc_needed = total_rfc
+                st.session_state.fc_needed_build = total_fc
                 st.write(f"To upgrade selected buildings, you need {total_rfc} rFC and {total_fc} FC")
 
         elif plan_input_method == opt2:
@@ -511,7 +512,10 @@ if calculator == "FC Refinement":
                         probability = percentile_factor
                         st.write(f"Using the weekly refinement strategy {optimal_x}/1/1/1/1/1/1, you have a {probability:.1f}% chance of obtaining {target_percentile_rfc:.0f} rFC in {weeks} weeks. Combined with your existing amount, you should end up with {total_rfc:.0f} rFC at a cost of {total_fc_used:.0f} FC expended in refinement.")
                         if plan_input_method == opt1:
-                            st.write(f"In addition, you will need {total_fc} fc more for the selected building upgrades.")
+                            fc_needed_combined = st.session_state.fc_needed_build + total_fc_used
+                            fc_combined_per_week = fc_needed_combined/weeks
+                            st.write(f"In addition, you will need {st.session_state.fc_needed_build} FC more for the selected building upgrades.")
+                            st.write(f"FC needed for building and refinement, {st.session_state.fc_needed_build:.0f} + {total_fc_used:.0f} = {fc_needed_combined:.0f}, which is an average accumulation requirement of {fc_combined_per_week:.0f} per week (ignoring any FC which are currently in the backpack).")
                             
                             # Display the per-tier cost of each selected building in tables
                             st.divider()
@@ -550,7 +554,6 @@ if calculator == "FC Refinement":
                                     rfc_data.append(rfc_row)
                                 
                                 # Display FC table
-                                st.divider()
                                 st.markdown("**FC Cost Breakdown**")
                                 st.dataframe(
                                     pd.DataFrame(fc_data),
